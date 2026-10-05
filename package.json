@@ -1,0 +1,21 @@
+{
+  "name": "sql-mastery",
+  "version": "1.2.0",
+  "description": "Personal adaptive SQL training environment (PostgreSQL in the browser).",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node tests/validate-content.mjs && node tests/persistence.test.mjs && node tests/ui-e2e.mjs && node tests/ui-zero.mjs",
+    "validate-pack": "node tests/validate-pack.mjs"
+  },
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "fake-indexeddb": "^6.2.5",
+    "jsdom": "^26.0.0"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  }
+}

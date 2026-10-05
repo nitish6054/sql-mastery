@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.bat text eol=crlf
+*.wasm binary
+*.data binary
+# The bundled PostgreSQL engine is third-party: hide it from diffs and language stats.
+vendor/** linguist-vendored -diff

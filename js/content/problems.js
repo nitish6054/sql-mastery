@@ -1,0 +1,13 @@
+import { PROBLEMS_A } from './problems_a.js';
+import { PROBLEMS_B } from './problems_b.js';
+import { PROBLEMS_C } from './problems_c.js';
+import { PROBLEMS_D } from './problems_d.js';
+import { PROBLEMS_E } from './problems_e.js';
+import { PROBLEMS_F } from './problems_f.js';
+import { PROBLEMS_G } from './problems_g.js';
+import { PROBLEMS_H } from './problems_h.js';
+import { PROBLEMS_I } from './problems_i.js';
+import { PROBLEMS_J } from './problems_j.js';
+import { PROBLEMS_K } from './problems_k.js';
+export const PROBLEMS = [...PROBLEMS_C, ...PROBLEMS_D, ...PROBLEMS_A, ...PROBLEMS_B, ...PROBLEMS_E, ...PROBLEMS_F, ...PROBLEMS_G, ...PROBLEMS_H, ...PROBLEMS_I, ...PROBLEMS_J, ...PROBLEMS_K];
+export const PROBLEM_BY_ID = Object.fromEntries(PROBLEMS.map(p => [p.id, p]));
