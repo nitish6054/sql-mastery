@@ -4,7 +4,7 @@
   "description": "Personal adaptive SQL training environment (PostgreSQL in the browser).",
   "scripts": {
     "start": "node server.js",
-    "test": "node tests/validate-content.mjs && node tests/persistence.test.mjs && node tests/ui-e2e.mjs && node tests/ui-zero.mjs",
+    "test": "node tests/validate-content.mjs && node tests/persistence.test.mjs && node tests/file-backup.test.mjs && node tests/ui-e2e.mjs && node tests/ui-zero.mjs",
     "validate-pack": "node tests/validate-pack.mjs"
   },
   "type": "module",

@@ -35,6 +35,8 @@ The interface scales with your screen: text and spacing grow on large monitors (
 
 Your data lives in the browser profile, not in this folder. **Settings → Export my learning data** downloads a complete JSON backup. The dashboard reminds you weekly. Import validates the file, shows what will change, and applies it in one transaction (merge or replace). Clearing site data, uninstalling the browser or using another browser/profile means starting empty unless you import a backup.
 
+**File backup (automatic):** when you run `node server.js`, the app also keeps a copy of your history in `user-data/backup.json` inside this folder, a few seconds after each change, plus dated snapshots of the previous state (last 14). `user-data/` is in `.gitignore`, so it is never committed or pushed. If you open the app in a browser with no history and a file backup exists, it offers to restore it; Settings → *File backup* has *Back up now* and *Restore*. Set `SQLM_DATA_DIR` to store it elsewhere. IndexedDB remains the source of truth; the file is a second copy.
+
 ## Updating the app
 
 Replace the files in the folder (keep the same address). Your history is untouched. Problem IDs are stable; if a problem's logic changes its `v` is bumped, and old attempts stay valid. Schema changes go through versioned IndexedDB migrations (`js/db.js → MIGRATIONS`).

@@ -149,3 +149,6 @@ vite.config.ts.timestamp-*
 .turbo
 .DS_Store
 coverage/
+
+# Local learner-data backup written by server.js (never commit or push progress)
+/user-data/

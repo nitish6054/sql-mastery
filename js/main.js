@@ -1,9 +1,10 @@
 // Boot + hash router.
-import { esc, $, $$, applyTheme, toast } from './ui.js';
+import { esc, $, $$, applyTheme, toast, confirmDialog, dateTime, prefs } from './ui.js';
 import * as S from './store.js';
 import { initEngine, onEngineEvent } from './sql/engine.js';
 import { loadPacks } from './packs.js';
-import { requestPersistentStorage, openDB } from './db.js';
+import { requestPersistentStorage, openDB, analyzeImport, applyImport } from './db.js';
+import * as FB from './filebackup.js';
 import { renderDashboard, renderWelcome } from './views/dashboard.js';
 import { mountWorkspace } from './views/workspace.js';
 import { renderSession, renderDiagnosticResults, renderSummary, renderInterview, renderAssessments } from './views/flows.js';
@@ -84,6 +85,23 @@ async function route() {
   }
 }
 
+// Optional file backup (user-data/, git-ignored): offer to restore into an empty browser, otherwise start autosaving.
+async function initFileBackup() {
+  const inf = await FB.info(); if (!inf) return;
+  const local = S.state.attempts.length > 0 || (S.state.profile.submitCount || 0) > 0;
+  if (inf.exists && !local) {
+    const ok = await confirmDialog('Restore your progress?', `Found a file backup in the app's user-data folder (${inf.attempts} attempts, saved ${esc(dateTime(inf.savedAt))}), but this browser has no history yet. Restore it?`, 'Restore');
+    if (ok) {
+      const a = await analyzeImport(await FB.fetchBackup());
+      if (a.ok) { await applyImport(a, 'merge'); if (a.settings?.theme) prefs.set('theme', a.settings.theme); location.reload(); return; }
+      toast('The file backup could not be read: ' + a.errors[0], 6000);
+    }
+    return; // declined: leave the file untouched until this browser has its own history
+  }
+  FB.enable(() => S.state);
+  if (local) FB.saveNow().catch(() => {});
+}
+
 async function boot() {
   applyTheme();
   window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
@@ -97,6 +115,7 @@ async function boot() {
     await openDB();
     await loadPacks();
     await S.loadState();
+    await initFileBackup().catch(() => {});
   } catch (e) {
     $('#view').innerHTML = `<div class="page"><div class="callout fail"><h2>Could not open your learning database</h2><p class="err">${esc(e.message)}</p><p>Private/incognito windows and some strict privacy settings disable IndexedDB. Use a normal window.</p></div></div>`;
     return;

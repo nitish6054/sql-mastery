@@ -1,6 +1,7 @@
 import { esc, $, toast, modal, download, typedConfirm, confirmDialog, date, dateTime, prefs } from '../ui.js';
 import * as db from '../db.js';
 import * as S from '../store.js';
+import * as FB from '../filebackup.js';
 import { engineVersion, exclusive } from '../sql/engine.js';
 import { validatePack, installPack, listInstalledPacks, PACK_APP } from '../packs.js';
 import { applyTheme } from '../ui.js';
@@ -23,6 +24,8 @@ export async function renderSettings(root) {
         Used: ${mb(storage.usage)} · Records: ${S.state.attempts.length} attempts, ${S.state.mistakes.length} mistakes, ${S.state.sessions.length} sessions<br>
         PostgreSQL engine: ${esc(engineVersion() || 'starting…')}<br>Database schema version: ${db.DB_VERSION}</p></div>
     </div>
+    <div class="panel"><h2>File backup (this computer)</h2><p class="small" id="fb-text">Checking…</p>
+      <div class="row"><button class="btn" id="fb-now" disabled>Back up now</button><button class="btn" id="fb-restore" disabled>Restore from file backup</button></div></div>
     <div class="panel"><h2>Backup</h2><p>Last backup: <b>${p.lastBackupAt ? dateTime(p.lastBackupAt) : 'never'}</b>. The file contains your complete history (attempts, mistakes, mastery, sessions, reviews, notes, interviews, settings, installed problem packs).</p>
       <div class="row"><button class="btn primary" id="export">Export my learning data</button><label class="btn">Import learning data<input type="file" id="import" accept="application/json,.json" hidden></label></div></div>
     <div class="panel"><h2>Problem packs</h2><p class="small">Add more problems as a JSON pack (see README → "Adding problems"). Every pack is checked against PostgreSQL before it's accepted.</p>
@@ -48,19 +51,16 @@ export async function renderSettings(root) {
   $('#import', root).onchange = async (e) => {
     const f = e.target.files[0]; e.target.value = ''; if (!f) return;
     let json; try { json = JSON.parse(await f.text()); } catch { toast('That file is not valid JSON.'); return; }
-    const a = await db.analyzeImport(json);
-    if (!a.ok) { await modal(`<h2>Can't import this file</h2><ul>${a.errors.map(x => `<li>${esc(x)}</li>`).join('')}</ul><div class="row" style="justify-content:flex-end"><button class="btn" data-close="">Close</button></div>`); return; }
-    const rows = Object.entries(a.summary).filter(([, v]) => v.incoming).map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num">${v.incoming}</td><td class="num">${v.new}</td><td class="num">${v.duplicates}</td><td class="num">${v.invalid}</td></tr>`).join('');
-    const choice = await modal(`<h2>Import learning data</h2><p class="small">Backup from ${esc(a.exportedAt || 'unknown date')} (schema v${a.fromVersion}).</p>
-      <table class="tbl"><thead><tr><th>Store</th><th class="num">In file</th><th class="num">New</th><th class="num">Already here</th><th class="num">Invalid</th></tr></thead><tbody>${rows}</tbody></table>
-      ${a.errors.length ? `<p class="small" style="color:var(--warn)">${a.errors.map(esc).join('<br>')}</p>` : ''}
-      <p class="small"><b>Merge</b> adds new records and keeps existing ones when IDs collide. <b>Replace</b> wipes current history first. Either runs as one transaction: if anything fails, nothing changes.</p>
-      <div class="row" style="justify-content:flex-end"><button class="btn ghost" data-close="">Cancel</button><button class="btn" data-close="replace">Replace</button><button class="btn primary" data-close="merge">Merge</button></div>`);
-    if (!choice) return;
-    if (choice === 'replace' && !(await typedConfirm('Replace all data', 'Your current history will be replaced by the backup.', 'REPLACE'))) return;
-    try { await db.applyImport(a, choice); if (a.settings?.theme) prefs.set('theme', a.settings.theme); toast('Import complete — reloading'); setTimeout(() => location.reload(), 700); }
-    catch (err) { toast('Import failed, nothing was changed: ' + err.message, 5000); }
+    await runImport(json);
   };
+  (async () => {
+    const inf = await FB.info(), t = $('#fb-text', root); if (!t) return;
+    if (!inf) { t.innerHTML = 'Not available here. Start the app with <code>node server.js</code> to keep a copy of your progress in the <code>user-data/</code> folder.'; return; }
+    t.innerHTML = `A copy of your progress is saved automatically a few seconds after each change to <code>user-data/backup.json</code> in the app folder. That folder is git-ignored, so it is never committed or pushed. Dated snapshots of the previous state (last 14 days) are kept beside it.<br>Last file backup: <b>${inf.exists ? `${dateTime(inf.savedAt)} · ${inf.attempts} attempts` : 'none yet'}</b>${FB.isActive() ? '' : ' · autosave is off until this browser has its own history'}`;
+    $('#fb-now', root).disabled = false; $('#fb-restore', root).disabled = !inf.exists;
+    $('#fb-now', root).onclick = async () => { try { await FB.saveNow(); toast('Saved to user-data/'); renderSettings(root); } catch (e) { toast('Backup failed: ' + e.message, 5000); } };
+    $('#fb-restore', root).onclick = async () => { try { await runImport(await FB.fetchBackup()); } catch (e) { toast(e.message, 5000); } };
+  })();
   $('#pack', root).onchange = async (e) => {
     const f = e.target.files[0]; e.target.value = ''; if (!f) return;
     let pack; try { pack = JSON.parse(await f.text()); } catch { toast('That file is not valid JSON.'); return; }
@@ -85,4 +85,19 @@ export async function renderSettings(root) {
     if (!(await typedConfirm('Delete all learning data', 'This permanently erases everything stored by this app in this browser. Export a backup first if you might want it back.', 'DELETE'))) return;
     await S.deleteEverything(); localStorage.clear(); location.hash = '#/'; location.reload();
   };
+}
+
+async function runImport(json) {
+    const a = await db.analyzeImport(json);
+    if (!a.ok) { await modal(`<h2>Can't import this file</h2><ul>${a.errors.map(x => `<li>${esc(x)}</li>`).join('')}</ul><div class="row" style="justify-content:flex-end"><button class="btn" data-close="">Close</button></div>`); return; }
+    const rows = Object.entries(a.summary).filter(([, v]) => v.incoming).map(([k, v]) => `<tr><td>${esc(k)}</td><td class="num">${v.incoming}</td><td class="num">${v.new}</td><td class="num">${v.duplicates}</td><td class="num">${v.invalid}</td></tr>`).join('');
+    const choice = await modal(`<h2>Import learning data</h2><p class="small">Backup from ${esc(a.exportedAt || 'unknown date')} (schema v${a.fromVersion}).</p>
+      <table class="tbl"><thead><tr><th>Store</th><th class="num">In file</th><th class="num">New</th><th class="num">Already here</th><th class="num">Invalid</th></tr></thead><tbody>${rows}</tbody></table>
+      ${a.errors.length ? `<p class="small" style="color:var(--warn)">${a.errors.map(esc).join('<br>')}</p>` : ''}
+      <p class="small"><b>Merge</b> adds new records and keeps existing ones when IDs collide. <b>Replace</b> wipes current history first. Either runs as one transaction: if anything fails, nothing changes.</p>
+      <div class="row" style="justify-content:flex-end"><button class="btn ghost" data-close="">Cancel</button><button class="btn" data-close="replace">Replace</button><button class="btn primary" data-close="merge">Merge</button></div>`);
+    if (!choice) return;
+    if (choice === 'replace' && !(await typedConfirm('Replace all data', 'Your current history will be replaced by the backup.', 'REPLACE'))) return;
+    try { await db.applyImport(a, choice); if (a.settings?.theme) prefs.set('theme', a.settings.theme); toast('Import complete — reloading'); setTimeout(() => location.reload(), 700); }
+    catch (err) { toast('Import failed, nothing was changed: ' + err.message, 5000); }
 }

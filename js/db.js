@@ -75,6 +75,11 @@ export async function get(store, key) {
   return p(db.transaction(store).objectStore(store).get(key));
 }
 
+// Listeners notified after every successful learner-data write (used by the optional file backup).
+const _writeListeners = [];
+export function onWrite(fn) { _writeListeners.push(fn); }
+const _notify = () => { for (const f of _writeListeners) { try { f(); } catch {} } };
+
 // Atomic multi-store write: { storeName: [records], ... } plus optional deletes { storeName: [keys] }.
 export async function writeAtomic(puts = {}, deletes = {}) {
   const db = await openDB();
@@ -82,7 +87,7 @@ export async function writeAtomic(puts = {}, deletes = {}) {
   if (!names.length) return;
   return new Promise((resolve, reject) => {
     const tx = db.transaction(names, 'readwrite');
-    tx.oncomplete = () => resolve();
+    tx.oncomplete = () => { resolve(); _notify(); };
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error || new Error('Transaction aborted'));
     for (const n of names) {

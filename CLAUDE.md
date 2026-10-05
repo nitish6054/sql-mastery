@@ -8,7 +8,7 @@ Owner: Nitish. Goal: SQL from zero → interview-ready (Data/Product/Business An
 primary dialect; flag MySQL differences, don't teach both at once.
 
 ## Run / test
-- `node server.js` → http://localhost:5173 (flag `--no-open`). The port matters: IndexedDB is per-origin, so a different
+- `node server.js` → http://localhost:5173 (flag `--no-open`). It also serves `/api/backup` (local-only: Host check + `X-SQLM` header) writing to `user-data/` (git-ignored; `SQLM_DATA_DIR` overrides). Never commit that folder. The port matters: IndexedDB is per-origin, so a different
   port is a different (empty) database. Never change the default.
 - `npm install` (dev-only deps) then `npm test`, which runs, in order:
   1. `tests/validate-content.mjs` — every problem vs real PostgreSQL: solution passes all its own cases, output columns match
@@ -31,6 +31,7 @@ primary dialect; flag MySQL differences, don't teach both at once.
 | `grader.js` | runs reference + learner SQL on sample data and every hidden dataset; compares; quality score |
 | `diagnose.js` + `content/mistake_rules.js` | rule-based root-cause analysis of wrong answers |
 | `sql/worker.js`, `sql/engine.js` | PGlite in a Web Worker; 8 s query timeout, worker restarts; `exclusive()` serialises reset→run pairs |
+| `filebackup.js` | optional second copy: PUTs the export to `server.js` `/api/backup` → `user-data/` (git-ignored). Never autosaves from an empty state; offers restore into an empty browser |
 | `packs.js` | install extra problem packs (validated against PostgreSQL first) |
 | `views/*` | dashboard, workspace, flows (sessions/diagnostic/interview/assessments), learn, insights, settings |
 | `content/*` | curriculum (topics + lessons + prerequisites), datasets, problems_*.js, patterns, references |
@@ -74,4 +75,3 @@ Roadmap: all levels now have full coverage. Possible next work: more Level 7 int
 - Mistake diagnosis is rule-based. P040 falls back to a generic message; improve rules as new wrong answers show up.
 - Explain-it-back and interview communication are self-graded by checklist (no AI in the loop, by design).
 - Verified in Safari and Chromium. Firefox untested.
-- Possible later: a file-based backup folder (File System Access API) as a second copy of the IndexedDB data.
