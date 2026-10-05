@@ -7,6 +7,8 @@ consume AI tokens** — grading, diagnosis and adaptation are all deterministic 
 Owner: Nitish. Goal: SQL from zero → interview-ready (Data/Product/Business Analyst at top tech firms). PostgreSQL is the
 primary dialect; flag MySQL differences, don't teach both at once.
 
+**Git workflow:** after every set of changes, commit with a clear message; never push to a remote.
+
 ## Run / test
 - `node server.js` → http://localhost:5173 (flag `--no-open`). It also serves `/api/backup` (local-only: Host check + `X-SQLM` header) writing to `user-data/` (git-ignored; `SQLM_DATA_DIR` overrides). Never commit that folder. The port matters: IndexedDB is per-origin, so a different
   port is a different (empty) database. Never change the default.
