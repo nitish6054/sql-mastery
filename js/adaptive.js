@@ -162,6 +162,12 @@ export function isUnlocked(topicId, mastery, curriculum) {
     || (mastery[p]?.conceptOnly && curriculum?.lessonsViewed?.[p]));
 }
 
+// A topic may be PRACTISED only once it is unlocked AND its lesson has been read (or it was placed out of / manually unlocked).
+export function isLearned(topicId, mastery, curriculum) {
+  return isUnlocked(topicId, mastery, curriculum) && !!(curriculum?.lessonsViewed?.[topicId] || curriculum?.placedTopics?.includes(topicId) || curriculum?.unlocked?.[topicId]);
+}
+export const learnedSet = (mastery, curriculum) => new Set(TOPICS.filter(t => isLearned(t.id, mastery, curriculum)).map(t => t.id));
+
 // If a topic keeps failing, find the weakest prerequisite (up to 2 levels up).
 export function rootCausePrereq(state, topicId, mastery) {
   const eps = topicEpisodes(state, topicId).slice(-5);
@@ -239,10 +245,13 @@ export function buildDailyPlan(state, mastery) {
     if (ls && section !== 'Warm-up' && plan.filter(x => x.repeat && x.section !== 'Warm-up').length >= 2) return false; // few re-solves per session
     used.add(p.id); plan.push({ section, problemId: p.id, status: 'pending', ...(ls ? { repeat: true, lastSolvedAt: ls } : {}), ...extra }); return true;
   };
-  const unlocked = TOPICS.filter(t => isUnlocked(t.id, mastery, state.curriculum) && problemsForTopic(t.id).length);
-  const U = new Set(TOPICS.filter(t => isUnlocked(t.id, mastery, state.curriculum)).map(t => t.id));
-  const chooseProblem = (st, tid, o = {}) => chooseProblemBase(st, tid, { ...o, unlocked: U });
+  const cur = state.curriculum;
+  // Only topics whose lesson has been read are practised; the planner teaches the next lesson(s) first.
+  const unlocked = TOPICS.filter(t => isLearned(t.id, mastery, cur) && problemsForTopic(t.id).length);
+  const U = learnedSet(mastery, cur);
+  const chooseProblem = (st, tid, o = {}) => chooseProblemBase(st, tid, { ...o, unlocked: o.unlocked || U });
   const practiced = unlocked.filter(t => mastery[t.id].problemsAttempted > 0);
+  const toTeach = TOPICS.filter(t => isUnlocked(t.id, mastery, cur) && !isLearned(t.id, mastery, cur) && problemsForTopic(t.id).length);
 
   // Warm-up: due topic reviews, else strong-but-stale topics.
   const due = dueReviews(state).filter(r => r.kind === 'topic').map(r => r.refId);
@@ -258,34 +267,41 @@ export function buildDailyPlan(state, mastery) {
     add('Weak area', chooseProblem(state, tid, { target: targetDifficulty(mastery[tid].masteryScore), exclude: used }), { topicId: tid, note: root?.reason });
   }
 
-  // New concept: next unlocked, not-started topic in curriculum order.
-  const fresh = unlocked.find(t => mastery[t.id].problemsAttempted === 0);
-  if (fresh) add('New concept', chooseProblem(state, fresh.id, { target: 'Easy', exclude: used }), { topicId: fresh.id, lesson: true });
+  // New concept: teach the next unlocked topic(s) whose lesson hasn't been read (max 2 per session, curriculum order).
+  // Each gets its lesson first, then an Easy problem that only needs concepts already learned plus this one.
+  const taught = [];
+  for (const t of toTeach) {
+    if (taught.length >= 2) break;
+    if (!t.prereqs.every(q => U.has(q) || taught.some(x => x.id === q))) continue;   // prerequisites are taught first
+    const p = chooseProblemBase(state, t.id, { target: 'Easy', exclude: used, unlocked: new Set([...U, ...taught.map(x => x.id), t.id]) });
+    if (add('New concept', p, { topicId: t.id, lesson: true })) taught.push(t);
+  }
+  const U2 = new Set([...U, ...taught.map(t => t.id)]);   // used for the rest of today's session, after the lesson card(s)
 
   // Main practice: in-progress topics, lowest level first, difficulty rising.
   const focus = unlocked.filter(t => mastery[t.id].problemsAttempted > 0 && !['Mastery', 'Fluency'].includes(mastery[t.id].stage))
     .sort((a, b) => a.level - b.level || mastery[a.id].masteryScore - mastery[b.id].masteryScore);
-  if (fresh) focus.push(fresh);
+  focus.push(...taught);
   let step = 0;
   for (let round = 0; round < 3 && plan.filter(x => x.section === 'Main practice').length < 4; round++) {
     for (const t of focus) {
       if (plan.filter(x => x.section === 'Main practice').length >= 4) break;
       const base = DIFF_ORDER.indexOf(targetDifficulty(mastery[t.id].masteryScore));
-      const target = DIFF_ORDER[Math.min(3, base + (step > 1 ? 1 : 0))];
-      if (add('Main practice', chooseProblem(state, t.id, { target, exclude: used }), { topicId: t.id })) step++;
+      const target = DIFF_ORDER[Math.min(3, base + (step > 1 && mastery[t.id].masteryScore >= 35 ? 1 : 0))]; // no step up while a topic is still new/weak
+      if (add('Main practice', chooseProblem(state, t.id, { target, exclude: used, unlocked: U2 }), { topicId: t.id })) step++;
     }
   }
   // Fill main practice from the next unlocked topics if still short (e.g. first session).
-  for (const t of unlocked) { if (plan.filter(x => x.section === 'Main practice').length >= 3) break; add('Main practice', chooseProblem(state, t.id, { target: targetDifficulty(mastery[t.id].masteryScore), exclude: used }), { topicId: t.id }); }
+  for (const t of [...unlocked, ...taught]) { if (plan.filter(x => x.section === 'Main practice').length >= 3) break; add('Main practice', chooseProblem(state, t.id, { target: targetDifficulty(mastery[t.id].masteryScore), exclude: used, unlocked: U2 }), { topicId: t.id }); }
 
   // Challenge: hardest unsolved problem whose topics are all unlocked.
   const unlockedSet = new Set(unlocked.map(t => t.id));
-  const challenge = PROBLEMS.filter(p => !used.has(p.id) && ['Hard', 'Very Hard'].includes(p.difficulty) && p.topics.every(t => unlockedSet.has(t)) && !(lastSolvedAt(state, p.id) && today(lastSolvedAt(state, p.id)) === today()))
+  const challenge = PROBLEMS.filter(p => !used.has(p.id) && ['Hard', 'Very Hard'].includes(p.difficulty) && p.topics.every(t => unlockedSet.has(t) && mastery[t].masteryScore >= 40) && !(lastSolvedAt(state, p.id) && today(lastSolvedAt(state, p.id)) === today()))
     .map(p => ({ p, solved: state.episodes.some(e => e.problemId === p.id && episodeOutcome(e).solved) }))
     .sort((a, b) => Number(a.solved) - Number(b.solved) || DIFF_ORDER.indexOf(a.p.difficulty) - DIFF_ORDER.indexOf(b.p.difficulty));
   const easierChallenge = PROBLEMS.filter(p => !used.has(p.id) && p.difficulty === 'Medium' && p.topics.every(t => unlockedSet.has(t)) && !state.episodes.some(e => e.problemId === p.id));
   add('Challenge', challenge[0]?.p || easierChallenge[0], { topicId: (challenge[0]?.p || easierChallenge[0])?.topics[0] });
-  return plan;
+  return [...plan.filter(x => x.section === 'New concept'), ...plan.filter(x => x.section !== 'New concept')];   // learn first, then practise
 }
 
 // ---------- What to do next ----------
@@ -319,7 +335,7 @@ export function nextStep(state, mastery, plan) {
     return { kind: 'start', headline: "Start today's session",
       detail: `${fresh.length} new problem${fresh.length === 1 ? '' : 's'}${again ? ` and ${again} to practise again` : ''}${lesson ? `, beginning with a short lesson on ${TOPIC_BY_ID[lesson.topicId]?.name}` : ''}.${fresh.length < 3 && why ? ' ' + why : ''}`, frontier };
   }
-  const unread = TOPICS.find(t => !state.curriculum?.lessonsViewed?.[t.id] && isUnlocked(t.id, mastery, state.curriculum));
+  const unread = TOPICS.find(t => isUnlocked(t.id, mastery, state.curriculum) && !isLearned(t.id, mastery, state.curriculum));
   return { kind: plan.length ? 'again' : 'blocked', headline: 'You have done every available problem in your unlocked topics',
     detail: `${why}${unread ? ` You also haven’t read the lesson “${unread.name}”.` : ''}${plan.length ? ` Today's session re-practises ${plan.length} earlier problem${plan.length === 1 ? '' : 's'} (marked “practise again”).` : ''}`, frontier, lessonId: unread?.id };
 }

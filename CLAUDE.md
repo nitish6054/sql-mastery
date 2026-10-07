@@ -18,6 +18,7 @@ primary dialect; flag MySQL differences, don't teach both at once.
   2. `tests/persistence.test.mjs` — submit → reload → export → wipe → import → verify, no duplicates on re-import.
   3. `tests/ui-e2e.mjs` — jsdom end-to-end: diagnostic, sessions, interview, assessments, every page.
   4. `tests/ui-zero.mjs` — zero-start journey (lesson 1 → sessions → unlocking → mastery needs multiple days).
+  Also in `npm test`: `tests/file-backup.test.mjs` (backup API) and `tests/sequencing.test.mjs` (learn-before-practise rule).
 - Extra: `node tests/diagnose-traps.mjs` prints the diagnosis each trap query receives (aim: no "Wrong result on …").
   `npm run validate-pack -- packs/x.json` checks a problem pack.
 - jsdom cannot judge layout. For UI changes, check real-browser rendering (Playwright is fine; don't add it as a
@@ -51,7 +52,8 @@ primary dialect; flag MySQL differences, don't teach both at once.
    no hints (see `computeTopicMastery`). Don't loosen without a reason, and keep `tests/ui-zero.mjs` green.
 6. **Never serve problems from locked topics** (`chooseProblem` with `unlocked`).
 7. No framework, bundler or runtime dependency. Dev-only dependencies are fine.
-8. UI: sizes in `rem` (root font-size is fluid in `css/app.css`), colours via CSS variables with light + dark themes,
+8. **Learn before practise.** A problem is only planned/served when every one of its topics is unlocked AND its lesson has been read (`isLearned`/`learnedSet`), or is taught earlier in the same session (lessons come first, prerequisites before dependents, first problem Easy). Keep `tests/sequencing.test.mjs` green.
+9. UI: sizes in `rem` (root font-size is fluid in `css/app.css`), colours via CSS variables with light + dark themes,
    layouts must collapse cleanly below 960 px.
 
 ## Adding problems (the main ongoing work)

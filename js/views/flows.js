@@ -25,7 +25,7 @@ export async function startDiagnostic() {
 export async function startInterview() {
   const seen = new Set(S.state.episodes.map(e => e.problemId));
   const m = S.state.derived.mastery;
-  const unlocked = new Set(TOPICS.filter(t => A.isUnlocked(t.id, m, S.state.curriculum)).map(t => t.id));
+  const unlocked = A.learnedSet(m, S.state.curriculum);
   const pick = (diffs) => {
     const pool = PROBLEMS.filter(p => diffs.includes(p.difficulty));
     const pref = pool.filter(p => p.topics.every(t => unlocked.has(t)));
@@ -46,7 +46,8 @@ export async function startChallenge() {
   const solved = new Set(S.state.episodes.filter(e => A.episodeOutcome(e).solved).map(e => e.problemId));
   const m = S.state.derived.mastery;
   const pool = PROBLEMS.filter(p => ['Hard', 'Very Hard'].includes(p.difficulty) && !solved.has(p.id));
-  const fair = pool.filter(p => p.topics.every(t => A.isUnlocked(t, m, S.state.curriculum)));
+  const learned = A.learnedSet(m, S.state.curriculum);
+  const fair = pool.filter(p => p.topics.every(t => learned.has(t)));
   const p = (fair.length ? fair : pool)[0] || PROBLEMS.filter(p => p.difficulty === 'Very Hard')[0];
   await S.startSession('challenge', [{ section: 'Challenge', problemId: p.id, topicId: p.topics[0], status: 'pending' }]); go('#/session/0');
 }
@@ -59,7 +60,7 @@ export function reviewPlan() {
     if (r.kind === 'mistake') {
       const m = S.state.mistakes.find(x => x.id === r.refId); if (!m || m.status === 'resolved') continue;
       topicId = m.topic; const orig = PROBLEM_BY_ID[m.occ[m.occ.length - 1].problemId];
-      p = !used.has(orig.id) && Date.now() - m.lastAt > A.DAY / 2 ? orig : A.chooseProblem(S.state, topicId, { exclude: used });
+      p = !used.has(orig.id) && Date.now() - m.lastAt > A.DAY / 2 ? orig : A.chooseProblem(S.state, topicId, { exclude: used, unlocked: A.learnedSet(S.state.derived.mastery, S.state.curriculum) });
       note = `Re-test of a past mistake: ${m.specific}`;
     }
     if (r.kind === 'pattern') continue; // patterns are reviewed through their topics
@@ -76,9 +77,10 @@ export async function startReview() {
 
 export async function startMixed() {
   const m = S.state.derived.mastery;
-  const practiced = TOPICS.filter(t => m[t.id].problemsAttempted > 0).sort((a, b) => (m[a.id].lastPracticedAt || 0) - (m[b.id].lastPracticedAt || 0));
+  const learnedT = A.learnedSet(m, S.state.curriculum);
+  const practiced = TOPICS.filter(t => m[t.id].problemsAttempted > 0 && learnedT.has(t.id)).sort((a, b) => (m[a.id].lastPracticedAt || 0) - (m[b.id].lastPracticedAt || 0));
   const used = new Set(); const plan = [];
-  for (const t of practiced) { const p = A.chooseProblem(S.state, t.id, { target: A.targetDifficulty(m[t.id].masteryScore), exclude: used }); if (p) { used.add(p.id); plan.push({ section: 'Mixed review', problemId: p.id, topicId: t.id, status: 'pending' }); } if (plan.length >= 6) break; }
+  for (const t of practiced) { const p = A.chooseProblem(S.state, t.id, { target: A.targetDifficulty(m[t.id].masteryScore), exclude: used, unlocked: learnedT }); if (p) { used.add(p.id); plan.push({ section: 'Mixed review', problemId: p.id, topicId: t.id, status: 'pending' }); } if (plan.length >= 6) break; }
   if (!plan.length) { toast('Practise a few topics first.'); return; }
   await S.startSession('mixed', plan); go('#/session/0');
 }

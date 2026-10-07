@@ -97,9 +97,11 @@ export async function mountWorkspace(root, { problemId, mode, item = null, sessi
 
   function problemTab() {
     const t = TOPIC_BY_ID[item?.topicId];
-    const lesson = item?.lesson && t ? `<div class="callout" style="margin-bottom:14px"><b>New concept: ${esc(t.name)}</b>
-      <p class="small" style="margin:6px 0">${esc(t.lesson.idea)}</p><details><summary>Example and traps</summary><pre>${esc(t.lesson.example)}</pre>
-      <ul class="small">${t.lesson.traps.map(x => `<li>${esc(x)}</li>`).join('')}</ul></details></div>` : '';
+    const lesson = item?.lesson && t ? `<div class="callout" style="margin-bottom:14px"><b>Learn first — new concept: ${esc(t.name)}</b>
+      <p class="small" style="margin:6px 0">${esc(t.lesson.idea)}</p><details open><summary>Example, traps and what you should be able to do</summary><pre>${esc(t.lesson.example)}</pre>
+      <p class="small" style="margin:6px 0"><b>Watch out for</b></p><ul class="small">${t.lesson.traps.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+      <p class="small" style="margin:6px 0"><b>You should be able to</b></p><ul class="small">${t.lesson.objectives.map(x => `<li>${esc(x)}</li>`).join('')}</ul></details>
+      <p class="small" style="margin:6px 0"><a href="#/topic/${esc(t.id)}">Open the full lesson</a> — read it before you start; this problem only uses what is taught here and in earlier lessons.</p></div>` : '';
     const note = item?.note ? `<div class="callout warn small" style="margin-bottom:12px">${esc(item.note)}</div>` : '';
     const reasoning = (p.reasoning || []).length && mode !== 'diagnostic' ? `<h3 style="margin-top:18px">Before you write SQL</h3>
       <p class="small muted">Pin down the metric definition. These are scored separately as business reasoning.</p>
