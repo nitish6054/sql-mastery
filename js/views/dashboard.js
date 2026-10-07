@@ -3,6 +3,7 @@ import { PROBLEM_BY_ID, PROBLEMS } from '../content/problems.js';
 import { TOPICS, LEVELS } from '../content/curriculum.js';
 import * as S from '../store.js';
 import * as A from '../adaptive.js';
+import * as FB from '../filebackup.js';
 import { startDaily, startDiagnostic, startChallenge, startReview, startInterview, reviewPlan } from './flows.js';
 
 export function renderWelcome(root) {
@@ -32,7 +33,9 @@ export function renderDashboard(root) {
   const due = A.dueReviews(S.state);
   const reviewCount = reviewPlan().length;
   const plan = s ? s.plan : A.buildDailyPlan(S.state, mastery);
-  const backupDays = p.lastBackupAt ? Math.floor((Date.now() - p.lastBackupAt) / A.DAY) : null;
+  const lastBackup = Math.max(p.lastBackupAt || 0, FB.lastSavedAt());   // downloaded export or automatic file backup
+  const backupDays = lastBackup ? Math.floor((Date.now() - lastBackup) / A.DAY) : null;
+  const next = A.nextStep(S.state, mastery, plan);
   const needBackup = (p.submitCount || 0) >= 10 && (backupDays == null || backupDays >= 7);
   const lastWeekly = S.state.weekly.slice().sort((a, b) => b.at - a.at)[0];
   const recurring = S.state.mistakes.filter(m => m.occurrences >= 2 && m.status !== 'resolved').sort((a, b) => b.occurrences - a.occurrences).slice(0, 4);
@@ -45,11 +48,15 @@ export function renderDashboard(root) {
       <span class="muted small">Level ${stats.currentLevel} · ${esc(LEVELS[stats.currentLevel].name)} · ${stats.currentStreak}-day streak (best ${Math.max(p.longestStreak || 0, stats.longestStreak)})</span></div>
     ${needBackup ? `<div class="callout warn row between"><span>${backupDays == null ? "You haven't exported a backup yet." : `Last backup ${backupDays} days ago.`} Your history lives only in this browser.</span><a class="btn sm" href="#/settings">Export backup</a></div>` : ''}
     ${lastWeekly && !lastWeekly.viewed ? `<div class="callout row between"><span>Your weekly review is ready (after ${lastWeekly.sessionIndex} sessions).</span><a class="btn sm" href="#/weekly/${lastWeekly.id}">Open weekly review</a></div>` : ''}
+    <div class="panel next-up"><div class="row between"><h2>Next up</h2></div>
+      <p><b>${esc(next.headline)}</b></p><p class="small">${esc(next.detail)}</p>
+      <div class="row">${next.kind === 'continue' ? `<a class="btn primary" href="${next.href}">Continue</a>` : next.kind === 'blocked' ? (next.lessonId ? `<a class="btn primary" href="#/topic/${next.lessonId}">Read the lesson</a>` : `<a class="btn" href="#/roadmap">Open roadmap</a>`) : `<button class="btn primary" id="start2">${next.kind === 'again' ? 'Practise again' : 'Start now'}</button>`}
+        ${next.kind === 'again' && next.lessonId ? `<a class="btn" href="#/topic/${next.lessonId}">Read the lesson</a>` : ''}</div></div>
     <div class="grid split-a">
       <div class="panel">
         <div class="row between"><h2>${sessionLabel}</h2><span class="small muted">${s ? `${plan.filter(x => x.status !== 'pending').length} of ${plan.length} done` : `${plan.length} problems · ~${Math.round(plan.reduce((t, x) => t + (PROBLEM_BY_ID[x.problemId].timeTarget || 8), 0) / 5) * 5} min`}</span></div>
         ${plan.length ? `<ol class="plan">${plan.map((x, i) => { const pr = PROBLEM_BY_ID[x.problemId];
-          return `<li class="${x.status !== 'pending' ? 'done' : ''} ${s && i === s.cursor ? 'current' : ''}"><div><div class="sec">${esc(x.section)}${x.topicId ? ` · ${esc(topicName(x.topicId))}` : ''}${x.lesson ? ' · includes a short lesson' : ''}</div>
+          return `<li class="${x.status !== 'pending' ? 'done' : ''} ${s && i === s.cursor ? 'current' : ''}"><div><div class="sec">${esc(x.section)}${x.topicId ? ` · ${esc(topicName(x.topicId))}` : ''}${x.lesson ? ' · includes a short lesson' : ''}${x.repeat ? ` · practise again (solved ${esc(rel(x.lastSolvedAt))})` : ''}</div>
             <div>${s ? esc(pr.title) : '<span class="muted">Problem hidden until you start</span>'}</div></div><div>${diffBadge(pr.difficulty)}</div></li>`; }).join('')}</ol>`
           : (() => { const nextLesson = TOPICS.find(t => !S.state.curriculum.lessonsViewed?.[t.id] && A.isUnlocked(t.id, mastery, S.state.curriculum));
               return `<div class="empty">${nextLesson ? `Read the next lesson to unlock practice: <a href="#/topic/${nextLesson.id}">${esc(nextLesson.name)}</a>` : 'Nothing to plan yet — open the problem bank.'}</div>`; })()}
@@ -86,6 +93,7 @@ export function renderDashboard(root) {
           <td class="num">${pct(m.accuracy)}</td><td class="num">${m.problemsSolved}/${m.problemsAttempted}</td><td class="num">${mins(m.avgTimeMs)}</td><td class="small">${esc(m.stage)}</td><td>${statusBadge(m.status)}</td></tr>`; }).join('')}</tbody></table>` : '<p class="muted small">Topics appear here once you start practising.</p>'}</div>
   </div>`;
   $('#start', root)?.addEventListener('click', startDaily);
+  $('#start2', root)?.addEventListener('click', startDaily);
   $('#end', root)?.addEventListener('click', async () => { const done = await S.endSession(); location.hash = `#/summary/${done.id}`; });
   $('#rev', root)?.addEventListener('click', startReview);
   $('#chal', root)?.addEventListener('click', startChallenge);
