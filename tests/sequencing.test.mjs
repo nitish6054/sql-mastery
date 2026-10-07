@@ -25,5 +25,16 @@ for (let k = 1; k <= TOPICS.length; k++) {
     checked++;
   }
 }
+// A problem that was already solved is never planned again.
+{
+  const state = mk(TOPICS.length), now = Date.now(), day = 86400000;
+  const solvedIds = Object.keys(PROBLEM_BY_ID).slice(0, 40);
+  state.episodes = solvedIds.map((id, i) => ({ id: 'E' + i, problemId: id, solved: true, solvedAt: now - 3 * day, openedAt: now - 3 * day, submits: 1, firstSubmitCorrect: true, hintLevel: 0, firstEver: true }));
+  const mastery = {}; for (const t of TOPICS) mastery[t.id] = A.computeTopicMastery(state, t.id);
+  const plan = A.buildDailyPlan(state, mastery);
+  ok(plan.length > 0, 'a plan is still produced when many problems are solved');
+  ok(plan.every(it => !solvedIds.includes(it.problemId)), 'no already-solved problem is planned again: ' + plan.map(it => it.problemId).join(','));
+  checked += plan.length;
+}
 console.log(fails ? `${fails} sequencing violation(s)` : `sequencing: ${checked} planned items across ${TOPICS.length} learner stages, all valid`);
 process.exit(fails ? 1 : 0);

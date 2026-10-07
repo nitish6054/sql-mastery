@@ -53,7 +53,7 @@ await waitFor(() => text().includes('What SQL is') && $('#go-session'), 'lesson 
 ok(/spreadsheet/.test(text()), 'lesson 1 explains tables/rows/columns for a beginner');
 click($('#runex')); await waitFor(() => $('#exout table'), 'example'); ok(true, 'lesson example runs');
 click($('#go-session'));
-await waitFor(() => $('#sql'), 'first session');
+await waitFor(() => $('#lesson-go') || $('#sql'), 'first session');
 const unlockedNow = () => new Set(S.state.derived ? Object.keys(S.state.derived.mastery).filter(id => A.isUnlocked(id, S.state.derived.mastery, S.state.curriculum)) : []);
 const checkPlan = (label) => {
   const U = unlockedNow(); const plan = S.state.activeSession.plan;
@@ -61,12 +61,15 @@ const checkPlan = (label) => {
   ok(bad.length === 0, `${label}: ${plan.length} problems, all within unlocked topics [${plan.map(it => it.problemId + '/' + PROBLEM_BY_ID[it.problemId].difficulty).join(', ')}]`);
 };
 checkPlan('session 1');
-ok(/New concept/.test($('.crumb').textContent) || /Main practice/.test($('.crumb').textContent), 'first item: ' + $('.crumb').textContent.trim().split('\n')[0]);
-ok(!!$('.callout b') && /New concept/.test(text()), 'lesson card shown with the first problem');
+ok(!!$('#lesson-go') && /Learn first/.test(text()), 'a dedicated lesson screen comes first: ' + text().match(/Learn first: [^\n]+/)?.[0]?.slice(0, 50));
+click($('#lesson-go')); await waitFor(() => $('#sql'), 'problem after the lesson');
+ok(/New concept/.test($('.crumb').textContent), 'first problem follows its lesson: ' + $('.crumb').textContent.trim().split('\n')[0]);
 // solve the whole session
 for (let i = 0; i < 20; i++) {
   if (w.location.hash.startsWith('#/summary')) break;
-  await waitFor(() => $('#sql') && $('.ws-head h1'), 'item');
+  await waitFor(() => ($('#sql') && $('.ws-head h1')) || $('#lesson-go'), 'item');
+  if ($('#lesson-go')) { click($('#lesson-go')); await sleep(60); }
+  await waitFor(() => $('#sql') && $('.ws-head h1'), 'item problem');
   const title = $('.ws-head h1').textContent; const p = Object.values(PROBLEM_BY_ID).find(x => x.title === title);
   $('#sql').value = p.solution; click($('#submit')); await sleep(50);
   if ($('.modal-bg .conf')) click($('.modal-bg .conf button'));
@@ -85,12 +88,16 @@ const twoDays = 2 * 86400000;
 for (const e of S.state.episodes) e.openedAt -= twoDays;
 S.recompute();
 const U = unlockedNow(); ok(U.has('f_sort') && U.has('f_filter') && !U.has('a_basic') && !U.has('j_inner'), 'unlocked next: ' + [...U].join(', '));
+const session1 = new Set(S.state.sessions.flatMap(x => (x.plan || []).map(it => it.problemId)));
 await go('#/'); await waitFor(() => $('#start'), 'dashboard start'); click($('#start'));
-await waitFor(() => $('#sql'), 'session 2'); checkPlan('session 2');
-ok(S.state.activeSession.plan.some(it => it.section === 'Warm-up'), 'session 2 opens with a spaced-repetition warm-up on SELECT');
+await waitFor(() => $('#sql') || $('#lesson-go'), 'session 2'); checkPlan('session 2');
+ok(S.state.activeSession.plan[0].section === 'New concept' && !!$('#lesson-go'), 'session 2 starts with a lesson screen for the new concept');
+ok(S.state.activeSession.plan.every(it => !session1.has(it.problemId)), 'session 2 contains none of the problems already solved in session 1');
 for (let i = 0; i < 20; i++) {
   if (w.location.hash.startsWith('#/summary')) break;
-  await waitFor(() => $('#sql') && $('.ws-head h1'), 'item');
+  await waitFor(() => ($('#sql') && $('.ws-head h1')) || $('#lesson-go'), 'item');
+  if ($('#lesson-go')) { click($('#lesson-go')); await sleep(60); }
+  await waitFor(() => $('#sql') && $('.ws-head h1'), 'item problem');
   const title = $('.ws-head h1').textContent; const p = Object.values(PROBLEM_BY_ID).find(x => x.title === title);
   $('#sql').value = p.solution; click($('#submit')); await sleep(50);
   if ($('.modal-bg .conf')) click($('.modal-bg .conf button'));

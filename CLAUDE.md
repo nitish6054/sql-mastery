@@ -52,7 +52,7 @@ primary dialect; flag MySQL differences, don't teach both at once.
    no hints (see `computeTopicMastery`). Don't loosen without a reason, and keep `tests/ui-zero.mjs` green.
 6. **Never serve problems from locked topics** (`chooseProblem` with `unlocked`).
 7. No framework, bundler or runtime dependency. Dev-only dependencies are fine.
-8. **Learn before practise.** A problem is only planned/served when every one of its topics is unlocked AND its lesson has been read (`isLearned`/`learnedSet`), or is taught earlier in the same session (lessons come first, prerequisites before dependents, first problem Easy). Keep `tests/sequencing.test.mjs` green.
+8. **Learn before practise.** A problem is only planned/served when every one of its topics is unlocked AND its lesson has been read (`isLearned`/`learnedSet`), or is taught earlier in the same session (lessons come first as their own screen, prerequisites before dependents, first problem Easy). A topic where you already solved problems counts as learned. **The daily plan never re-serves an already-solved problem**; redoing is for Review mode / Problem bank. Keep `tests/sequencing.test.mjs` green.
 9. UI: sizes in `rem` (root font-size is fluid in `css/app.css`), colours via CSS variables with light + dark themes,
    layouts must collapse cleanly below 960 px.
 

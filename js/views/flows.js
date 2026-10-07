@@ -102,11 +102,32 @@ export async function renderSession(root) {
   if (s.cursor >= s.plan.length) { await finish(s); return () => {}; }
   const item = s.plan[s.cursor];
   const last = s.cursor === s.plan.length - 1;
+  // A new concept gets its own lesson screen first; the problem opens only after "I've read it".
+  if (item.lesson && !S.state.curriculum.lessonsViewed?.[item.topicId]) {
+    let inner = null;
+    renderLessonGate(root, item, s, async () => { inner = await renderSession(root); });
+    return () => { if (typeof inner === 'function') inner(); };
+  }
   return mountWorkspace(root, {
     problemId: item.problemId, mode: MODE[s.kind] || 'practice', item, session: s,
     advanceLabel: last ? 'Finish' : 'Next problem',
     onAdvance: async () => { s.cursor++; await S.saveSession(s); go(`#/session/${s.cursor}`); },
   });
+}
+
+function renderLessonGate(root, item, s, onContinue) {
+  const t = TOPIC_BY_ID[item.topicId], L = t.lesson;
+  const rest = s.plan.length - s.cursor;
+  root.innerHTML = `<div class="page stack"><div class="muted small">Today's session · step ${s.cursor + 1} of ${s.plan.length} · new concept</div>
+    <h1>Learn first: ${esc(t.name)}</h1>
+    <div class="panel"><p class="lesson-idea">${esc(L.idea)}</p>
+      <h3>Example</h3><pre>${esc(L.example)}</pre>
+      <h3>Watch out for</h3><ul>${L.traps.map(x => `<li>${esc(x)}</li>`).join('')}</ul>
+      <h3>You should be able to</h3><ul>${L.objectives.map(x => `<li>${esc(x)}</li>`).join('')}</ul></div>
+    <div class="row"><button class="btn primary" id="lesson-go">I’ve read it — start the problem</button>
+      <a class="btn" href="#/topic/${esc(t.id)}" target="_blank" rel="noopener">Open the full lesson in a new tab</a></div>
+    <p class="small muted">${rest} item${rest === 1 ? '' : 's'} left in this session. The problem that follows only uses this concept and ones you have already learned.</p></div>`;
+  $('#lesson-go', root).onclick = async () => { await S.markLessonViewed(item.topicId); await onContinue(); };
 }
 
 async function finish(s) {
@@ -174,6 +195,7 @@ export function renderSummary(root, id) {
   const s = S.state.sessions.find(x => x.id === id);
   if (!s) { root.innerHTML = '<div class="page"><div class="empty">Session not found.</div></div>'; return; }
   const mname = (mid) => S.state.mistakes.find(m => m.id === mid)?.specific || mid;
+  const nplan = A.buildDailyPlan(S.state, S.state.derived.mastery), nx = A.nextStep(S.state, S.state.derived.mastery, nplan);
   root.innerHTML = `<div class="page stack"><h1>Session summary</h1><p class="muted">${date(s.startedAt)} · ${mins(s.durationMs)} · ${esc(s.kind)}</p>
     <div class="grid g4">${[['Attempted', s.attempted], ['Solved', s.solved], ['Accuracy', pct(s.accuracy)], ['Hint-free', pct(s.hintFreeRate)], ['Avg time to solve', mins(s.avgTimeMs)], ['Submissions', s.submits]]
       .map(([l, v]) => `<div class="stat"><div class="v">${v ?? '—'}</div><div class="l">${l}</div></div>`).join('')}</div>
@@ -183,9 +205,12 @@ export function renderSummary(root, id) {
       <div class="panel"><h2>Mistakes</h2><p class="small"><b>New:</b> ${s.newMistakes?.length ? s.newMistakes.map(mname).map(esc).join('; ') : 'none'}</p>
         <p class="small"><b>Repeated:</b> ${s.repeatedMistakes?.length ? s.repeatedMistakes.map(mname).map(esc).join('; ') : 'none'}</p></div>
       <div class="panel"><h2>Concepts to review</h2>${(s.conceptsToReview || []).map(t => `<a class="chip" href="#/topic/${t}">${esc(topicName(t))}</a>`).join('') || '<p class="muted small">Nothing urgent.</p>'}</div>
-      <div class="panel"><h2>Recommended next session</h2>${(s.recommendedNext || []).map(t => `<span class="chip">${esc(topicName(t))}</span>`).join('')}
-        <div class="row" style="margin-top:12px"><a class="btn primary" href="#/">Back to dashboard</a></div></div></div>
+      <div class="panel"><h2>Next session</h2>
+        <p><b>${esc(nx.headline)}</b></p><p class="small">${esc(nx.detail)}</p>
+        ${(s.recommendedNext || []).length ? `<p class="small muted">Focus areas: ${(s.recommendedNext || []).map(t => esc(topicName(t))).join(', ')}</p>` : ''}
+        <div class="row" style="margin-top:12px">${nplan.length ? `<button class="btn primary" id="next-sess">Start next session</button>` : (nx.lessonId ? `<a class="btn primary" href="#/topic/${nx.lessonId}">Read the next lesson</a>` : '')}<a class="btn" href="#/">Back to dashboard</a></div></div></div>
     <div class="panel"><h2>Problems</h2><table class="tbl"><tbody>${s.plan.map(it => `<tr><td>${esc(it.section)}</td><td><a href="#/problem/${it.problemId}?mode=practice">${esc(PROBLEM_BY_ID[it.problemId]?.title)}</a></td><td>${esc(it.status)}</td></tr>`).join('')}</tbody></table></div></div>`;
+  $('#next-sess', root)?.addEventListener('click', startDaily);
 }
 
 const COMM = ['Restated the question and the output', 'Stated table grain and how joins change it', 'Named edge cases (NULLs, ties, duplicates, boundaries)', 'Validated the result / walked through a row', 'Discussed alternatives or performance'];

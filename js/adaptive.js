@@ -164,7 +164,7 @@ export function isUnlocked(topicId, mastery, curriculum) {
 
 // A topic may be PRACTISED only once it is unlocked AND its lesson has been read (or it was placed out of / manually unlocked).
 export function isLearned(topicId, mastery, curriculum) {
-  return isUnlocked(topicId, mastery, curriculum) && !!(curriculum?.lessonsViewed?.[topicId] || curriculum?.placedTopics?.includes(topicId) || curriculum?.unlocked?.[topicId]);
+  return isUnlocked(topicId, mastery, curriculum) && !!(curriculum?.lessonsViewed?.[topicId] || curriculum?.placedTopics?.includes(topicId) || curriculum?.unlocked?.[topicId] || mastery[topicId]?.problemsSolved > 0);
 }
 export const learnedSet = (mastery, curriculum) => new Set(TOPICS.filter(t => isLearned(t.id, mastery, curriculum)).map(t => t.id));
 
@@ -240,16 +240,14 @@ export function buildDailyPlan(state, mastery) {
   const used = new Set(); const plan = [];
   const add = (section, p, extra = {}) => {
     if (!p || used.has(p.id)) return false;
-    const ls = lastSolvedAt(state, p.id);
-    if (ls && today(ls) === today()) return false;                                        // never re-serve what you solved today
-    if (ls && section !== 'Warm-up' && plan.filter(x => x.repeat && x.section !== 'Warm-up').length >= 2) return false; // few re-solves per session
-    used.add(p.id); plan.push({ section, problemId: p.id, status: 'pending', ...(ls ? { repeat: true, lastSolvedAt: ls } : {}), ...extra }); return true;
+    if (lastSolvedAt(state, p.id)) return false;   // a problem you have already solved is never planned again (Review mode / Problem bank are the places to redo them)
+    used.add(p.id); plan.push({ section, problemId: p.id, status: 'pending', ...extra }); return true;
   };
   const cur = state.curriculum;
   // Only topics whose lesson has been read are practised; the planner teaches the next lesson(s) first.
   const unlocked = TOPICS.filter(t => isLearned(t.id, mastery, cur) && problemsForTopic(t.id).length);
   const U = learnedSet(mastery, cur);
-  const chooseProblem = (st, tid, o = {}) => chooseProblemBase(st, tid, { ...o, unlocked: o.unlocked || U });
+  const chooseProblem = (st, tid, o = {}) => chooseProblemBase(st, tid, { allowResolve: false, ...o, unlocked: o.unlocked || U });
   const practiced = unlocked.filter(t => mastery[t.id].problemsAttempted > 0);
   const toTeach = TOPICS.filter(t => isUnlocked(t.id, mastery, cur) && !isLearned(t.id, mastery, cur) && problemsForTopic(t.id).length);
 
@@ -273,7 +271,7 @@ export function buildDailyPlan(state, mastery) {
   for (const t of toTeach) {
     if (taught.length >= 2) break;
     if (!t.prereqs.every(q => U.has(q) || taught.some(x => x.id === q))) continue;   // prerequisites are taught first
-    const p = chooseProblemBase(state, t.id, { target: 'Easy', exclude: used, unlocked: new Set([...U, ...taught.map(x => x.id), t.id]) });
+    const p = chooseProblemBase(state, t.id, { target: 'Easy', exclude: used, allowResolve: false, unlocked: new Set([...U, ...taught.map(x => x.id), t.id]) });
     if (add('New concept', p, { topicId: t.id, lesson: true })) taught.push(t);
   }
   const U2 = new Set([...U, ...taught.map(t => t.id)]);   // used for the rest of today's session, after the lesson card(s)
@@ -296,7 +294,7 @@ export function buildDailyPlan(state, mastery) {
 
   // Challenge: hardest unsolved problem whose topics are all unlocked.
   const unlockedSet = new Set(unlocked.map(t => t.id));
-  const challenge = PROBLEMS.filter(p => !used.has(p.id) && ['Hard', 'Very Hard'].includes(p.difficulty) && p.topics.every(t => unlockedSet.has(t) && mastery[t].masteryScore >= 40) && !(lastSolvedAt(state, p.id) && today(lastSolvedAt(state, p.id)) === today()))
+  const challenge = PROBLEMS.filter(p => !used.has(p.id) && ['Hard', 'Very Hard'].includes(p.difficulty) && p.topics.every(t => unlockedSet.has(t) && mastery[t].masteryScore >= 40) && !lastSolvedAt(state, p.id))
     .map(p => ({ p, solved: state.episodes.some(e => e.problemId === p.id && episodeOutcome(e).solved) }))
     .sort((a, b) => Number(a.solved) - Number(b.solved) || DIFF_ORDER.indexOf(a.p.difficulty) - DIFF_ORDER.indexOf(b.p.difficulty));
   const easierChallenge = PROBLEMS.filter(p => !used.has(p.id) && p.difficulty === 'Medium' && p.topics.every(t => unlockedSet.has(t)) && !state.episodes.some(e => e.problemId === p.id));
@@ -329,7 +327,7 @@ export function nextStep(state, mastery, plan) {
   let why = '';
   if (frontier) {
     const need = frontier.unmet.map(u => u.conceptOnly ? `read the lesson “${u.name}”` : `raise ${u.name} to 40% (now ${u.score}%)`).join(' and ');
-    why = `Next topic: ${frontier.topic.name}. To unlock it, ${need}. Mastery needs solved problems on different days, so re-solving a problem from an earlier day counts as fresh evidence.`;
+    why = `Next topic: ${frontier.topic.name}. To unlock it, ${need}. Mastery grows with new problems solved on different days; when no new ones are left, redo earlier ones from Review or the Problem bank.`;
   }
   if (fresh.length) {
     return { kind: 'start', headline: "Start today's session",

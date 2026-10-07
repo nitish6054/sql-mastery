@@ -81,7 +81,9 @@ ok(/Placement: Level \d/.test(text()), 'placement shown: ' + text().match(/Place
 
 // Daily session
 click($('#go-daily'));
-await waitFor(() => $('#sql'), 'daily session workspace');
+await waitFor(() => $('#sql') || $('#lesson-go'), 'daily session workspace');
+while ($('#lesson-go')) { click($('#lesson-go')); await sleep(60); }   // new concepts start with a lesson screen
+await waitFor(() => $('#sql'), 'daily session problem');
 ok(/Today's session/.test($('.crumb').textContent), 'daily session started: ' + $('.crumb').textContent.trim().slice(0, 60));
 // Run
 $('#sql').value = 'SELECT 1 AS one;'; click($('#run'));
