@@ -12,8 +12,11 @@ const hasData = (st) => st.attempts.length > 0 || (st.profile?.submitCount || 0)
 export async function info() {
   try { const r = await call('/api/backup/info'); return r.ok ? await r.json() : null; } catch { return null; }
 }
-export async function fetchBackup() {
-  const r = await call('/api/backup'); if (!r.ok) throw new Error('No file backup found');
+export async function list() {
+  try { const r = await call('/api/backup/list'); return r.ok ? await r.json() : []; } catch { return []; }
+}
+export async function fetchBackup(file) {
+  const r = await call('/api/backup' + (file ? `?file=${encodeURIComponent(file)}` : '')); if (!r.ok) throw new Error('No file backup found');
   return r.json();
 }
 export async function saveNow() {
@@ -30,4 +33,5 @@ export function enable(stateGetter) {
     timer = setTimeout(() => { if (hasData(getState())) saveNow().catch(e => { status.error = e.message; }); }, 3000);
   });
 }
+export const lastSavedAt = () => Date.parse(status.savedAt) || 0;
 export const isActive = () => active;

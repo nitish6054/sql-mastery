@@ -88,6 +88,7 @@ async function route() {
 // Optional file backup (user-data/, git-ignored): offer to restore into an empty browser, otherwise start autosaving.
 async function initFileBackup() {
   const inf = await FB.info(); if (!inf) return;
+  if (inf.exists) FB.status.savedAt = inf.savedAt;
   const local = S.state.attempts.length > 0 || (S.state.profile.submitCount || 0) > 0;
   if (inf.exists && !local) {
     const ok = await confirmDialog('Restore your progress?', `Found a file backup in the app's user-data folder (${inf.attempts} attempts, saved ${esc(dateTime(inf.savedAt))}), but this browser has no history yet. Restore it?`, 'Restore');

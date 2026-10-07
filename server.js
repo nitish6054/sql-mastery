@@ -30,23 +30,42 @@ async function backupInfo() {
   const raw = await readFile(BACKUP, 'utf8'); const j = JSON.parse(raw);
   return { exists: true, savedAt: j.exportedAt, bytes: raw.length, attempts: j.data?.problem_attempts?.length || 0 };
 }
+async function listBackups() {
+  if (!(await exists(DATA_DIR))) return [];
+  const out = [];
+  for (const f of await readdir(DATA_DIR)) {
+    if (!/^backup(-\d{4}-\d\d-\d\d)?\.json$/.test(f)) continue;
+    try {
+      const raw = await readFile(join(DATA_DIR, f), 'utf8'), j = JSON.parse(raw);
+      out.push({ file: f, latest: f === 'backup.json', savedAt: j.exportedAt, bytes: raw.length, attempts: j.data?.problem_attempts?.length || 0 });
+    } catch { /* unreadable file: skip */ }
+  }
+  return out.sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
+}
 async function api(req, res, path) {
   // Only the local machine may use it: the Host check blocks DNS-rebinding, the custom header blocks cross-site form posts.
   if (!localHost(req) || req.headers['x-sqlm'] !== '1') return json(res, 403, { error: 'forbidden' });
   try {
     if (path === '/api/backup/info' && req.method === 'GET') return json(res, 200, await backupInfo());
+    if (path === '/api/backup/list' && req.method === 'GET') return json(res, 200, await listBackups());
     if (path === '/api/backup' && req.method === 'GET') {
-      if (!(await exists(BACKUP))) return json(res, 404, { error: 'no backup' });
-      return res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }).end(await readFile(BACKUP));
+      const want = new URL(req.url, 'http://x').searchParams.get('file');
+      if (want && !/^backup(-\d{4}-\d\d-\d\d)?\.json$/.test(want)) return json(res, 400, { error: 'bad file name' });
+      const file = want ? join(DATA_DIR, want) : BACKUP;
+      if (!(await exists(file))) return json(res, 404, { error: 'no backup' });
+      return res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }).end(await readFile(file));
     }
     if (path === '/api/backup' && req.method === 'PUT') {
       const body = await readBody(req); let j;
       try { j = JSON.parse(body.toString('utf8')); } catch { return json(res, 400, { error: 'invalid JSON' }); }
       if (j?.app !== APP_ID || typeof j.schemaVersion !== 'number' || typeof j.data !== 'object') return json(res, 400, { error: 'not a SQL Mastery backup' });
       await mkdir(DATA_DIR, { recursive: true });
-      // Before today's first overwrite, keep the previous state as a dated snapshot (newest 14 kept).
-      const day = new Date().toISOString().slice(0, 10), snap = join(DATA_DIR, `backup-${day}.json`);
-      if ((await exists(BACKUP)) && !(await exists(snap))) await copyFile(BACKUP, snap);
+      // Keep the final state of each earlier day as backup-<that day>.json (the name is the day the data represents),
+      // written when the first save of a new day arrives. Newest 14 kept.
+      if (await exists(BACKUP)) {
+        const day = (await stat(BACKUP)).mtime.toISOString().slice(0, 10), snap = join(DATA_DIR, `backup-${day}.json`);
+        if (day !== new Date().toISOString().slice(0, 10) && !(await exists(snap))) await copyFile(BACKUP, snap);
+      }
       const old = (await readdir(DATA_DIR)).filter(f => /^backup-\d{4}-\d\d-\d\d\.json$/.test(f)).sort();
       for (const f of old.slice(0, Math.max(0, old.length - KEEP_SNAPSHOTS))) await unlink(join(DATA_DIR, f)).catch(() => {});
       const tmp = BACKUP + '.tmp'; await writeFile(tmp, body); await rename(tmp, BACKUP);

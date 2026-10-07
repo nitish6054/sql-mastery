@@ -1,4 +1,4 @@
-import { esc, $, toast, modal, download, typedConfirm, confirmDialog, date, dateTime, prefs } from '../ui.js';
+import { esc, $, $$, toast, modal, download, typedConfirm, confirmDialog, date, dateTime, prefs } from '../ui.js';
 import * as db from '../db.js';
 import * as S from '../store.js';
 import * as FB from '../filebackup.js';
@@ -25,8 +25,9 @@ export async function renderSettings(root) {
         PostgreSQL engine: ${esc(engineVersion() || 'starting…')}<br>Database schema version: ${db.DB_VERSION}</p></div>
     </div>
     <div class="panel"><h2>File backup (this computer)</h2><p class="small" id="fb-text">Checking…</p>
-      <div class="row"><button class="btn" id="fb-now" disabled>Back up now</button><button class="btn" id="fb-restore" disabled>Restore from file backup</button></div></div>
-    <div class="panel"><h2>Backup</h2><p>Last backup: <b>${p.lastBackupAt ? dateTime(p.lastBackupAt) : 'never'}</b>. The file contains your complete history (attempts, mistakes, mastery, sessions, reviews, notes, interviews, settings, installed problem packs).</p>
+      <div class="row"><button class="btn" id="fb-now" disabled>Back up now</button></div>
+      <div id="fb-list" class="small" style="margin-top:10px"></div></div>
+    <div class="panel"><h2>Backup</h2><p>Last backup: <b id="last-bk">${p.lastBackupAt ? dateTime(p.lastBackupAt) : 'never'}</b> <span class="small muted">(downloaded export)</span><span id="file-bk"></span>. The file contains your complete history (attempts, mistakes, mastery, sessions, reviews, notes, interviews, settings, installed problem packs).</p>
       <div class="row"><button class="btn primary" id="export">Export my learning data</button><label class="btn">Import learning data<input type="file" id="import" accept="application/json,.json" hidden></label></div></div>
     <div class="panel"><h2>Problem packs</h2><p class="small">Add more problems as a JSON pack (see README → "Adding problems"). Every pack is checked against PostgreSQL before it's accepted.</p>
       ${packs.length ? `<ul class="small">${packs.map(k => `<li>${esc(k.name)} — ${k.count} problems, added ${date(k.addedAt)}</li>`).join('')}</ul>` : '<p class="small muted">No packs installed.</p>'}
@@ -57,9 +58,13 @@ export async function renderSettings(root) {
     const inf = await FB.info(), t = $('#fb-text', root); if (!t) return;
     if (!inf) { t.innerHTML = 'Not available here. Start the app with <code>node server.js</code> to keep a copy of your progress in the <code>user-data/</code> folder.'; return; }
     t.innerHTML = `A copy of your progress is saved automatically a few seconds after each change to <code>user-data/backup.json</code> in the app folder. That folder is git-ignored, so it is never committed or pushed. Dated snapshots of the previous state (last 14 days) are kept beside it.<br>Last file backup: <b>${inf.exists ? `${dateTime(inf.savedAt)} · ${inf.attempts} attempts` : 'none yet'}</b>${FB.isActive() ? '' : ' · autosave is off until this browser has its own history'}`;
-    $('#fb-now', root).disabled = false; $('#fb-restore', root).disabled = !inf.exists;
+    $('#fb-now', root).disabled = false;
     $('#fb-now', root).onclick = async () => { try { await FB.saveNow(); toast('Saved to user-data/'); renderSettings(root); } catch (e) { toast('Backup failed: ' + e.message, 5000); } };
-    $('#fb-restore', root).onclick = async () => { try { await runImport(await FB.fetchBackup()); } catch (e) { toast(e.message, 5000); } };
+    const files = await FB.list();
+    $('#file-bk', root).innerHTML = ` · automatic file backup: <b>${inf.exists ? dateTime(inf.savedAt) : 'none yet'}</b>`;
+    $('#fb-list', root).innerHTML = files.length ? `<table class="tbl"><thead><tr><th>Saved</th><th class="num">Attempts</th><th>File</th><th></th></tr></thead><tbody>${files.map((f, i) => `<tr><td>${esc(dateTime(f.savedAt))}${f.latest ? ' <b>(latest)</b>' : ''}</td><td class="num">${f.attempts}</td><td class="muted">user-data/${esc(f.file)}</td><td><button class="btn sm" data-file="${esc(f.file)}">Restore</button></td></tr>`).join('')}</tbody></table>
+      <p class="muted">Each daily file holds the end-of-day state of the date shown in "Saved". Restore lets you choose merge or replace.</p>` : '<span class="muted">No file backups yet.</span>';
+    $$('#fb-list [data-file]', root).forEach(b => { b.onclick = async () => { try { await runImport(await FB.fetchBackup(b.dataset.file)); } catch (e) { toast(e.message, 5000); } }; });
   })();
   $('#pack', root).onchange = async (e) => {
     const f = e.target.files[0]; e.target.value = ''; if (!f) return;
